@@ -7,9 +7,9 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"RESTfullAPi-Golang/RESTfullApi/clients"
+	"github/DavidHernandez21/RESTfullAPi-Golang/RESTfullApi/clients"
 
-	"RESTfullAPi-Golang/RESTfullApi/handlers"
+	"github/DavidHernandez21/RESTfullAPi-Golang/RESTfullApi/handlers"
 )
 
 func main() {
