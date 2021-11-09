@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"RESTfullAPi-Golang/RESTfullApi/timer"
+	"github/DavidHernandez21/RESTfullAPi-Golang/RESTfullApi/timer"
 
 	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/mongo"
