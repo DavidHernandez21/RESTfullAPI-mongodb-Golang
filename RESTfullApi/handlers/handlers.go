@@ -56,25 +56,31 @@ func (c *CreatePersonEndpoint) ServeHTTP(response http.ResponseWriter, request *
 		return
 	}
 
+	if err1 := person.Validate(); err1 != nil {
+		c.Logger.Printf("Error validating person: %v", err1)
+		http.Error(response, fmt.Sprintf("Error validating person: %v", err1), http.StatusBadRequest)
+		return
+	}
+
 	collection := c.Collection
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	result, err1 := collection.InsertOne(ctx, person)
-
-	if err1 != nil {
-
-		http.Error(response, "Internal Error", http.StatusInternalServerError)
-		c.Logger.Printf("Error while inserting the person: %v \n%v\n", person, err1)
-		return
-	}
-
-	err2 := json.NewEncoder(response).Encode(result)
+	result, err2 := collection.InsertOne(ctx, person)
 
 	if err2 != nil {
 
 		http.Error(response, "Internal Error", http.StatusInternalServerError)
-		c.Logger.Printf("Error while marshalling the result: %v \n%v\n", result, err2)
+		c.Logger.Printf("Error while inserting the person: %v \n%v\n", person, err2)
+		return
+	}
+
+	err3 := json.NewEncoder(response).Encode(result)
+
+	if err3 != nil {
+
+		http.Error(response, "Internal Error", http.StatusInternalServerError)
+		c.Logger.Printf("Error while marshalling the result: %v \n%v\n", result, err3)
 		return
 	}
 

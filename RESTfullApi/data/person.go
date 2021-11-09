@@ -4,14 +4,15 @@ import (
 	"encoding/json"
 	"io"
 
+	"github.com/go-playground/validator"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type (
 	Person struct {
 		ID        primitive.ObjectID `json:"_id,omitempty" bson:"_id,omitempty"`
-		Firstname string             `json:"firstname,omitempty" bson:"firstname,omitempty"`
-		Lastname  string             `json:"lastname,omitempty" bson:"lastname,omitempty"`
+		Firstname string             `json:"firstname,omitempty" bson:"firstname,omitempty" validate:"required,alpha,max=15"`
+		Lastname  string             `json:"lastname,omitempty" bson:"lastname,omitempty" validate:"required,alpha,max=15"`
 	}
 
 	People []*Person
@@ -35,4 +36,11 @@ func (p *People) ToJSON(w io.Writer) error {
 func (p *People) FromJSON(r io.Reader) error {
 
 	return json.NewDecoder(r).Decode(&p)
+}
+
+func (p *Person) Validate() error {
+
+	validate := validator.New()
+
+	return validate.Struct(p)
 }
