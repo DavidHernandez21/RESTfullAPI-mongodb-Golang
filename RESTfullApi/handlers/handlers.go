@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"RESTfullAPi-Golang/RESTfullApi/data"
-	"RESTfullAPi-Golang/RESTfullApi/timer"
+	"github/DavidHernandez21/RESTfullAPi-Golang/RESTfullApi/data"
+	"github/DavidHernandez21/RESTfullAPi-Golang/RESTfullApi/timer"
 
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
