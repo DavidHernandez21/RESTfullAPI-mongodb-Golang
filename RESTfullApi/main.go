@@ -20,10 +20,7 @@ func main() {
 
 	collection := client.Database("thepolyglotdeveloper").Collection("people")
 
-	GetPersonByIdEndpoint := handlers.NewGetPersonByIdEndpoint(logger, collection)
-	CreatePersonEndpoint := handlers.NewCreatePersonEndpoint(logger, collection)
-	GetPeopleEndpoint := handlers.NewGetPeopleEndpoint(logger, collection)
-	GetPersonByNameEndpoint := handlers.NewGetPersonByNameEndpoint(logger, collection)
+	EndpointHandler := handlers.NewEndpointHandler(logger, collection)
 
 	logger.Println("Starting the application...")
 
@@ -37,12 +34,13 @@ func main() {
 
 	getRouter := router.Methods(http.MethodGet).Subrouter()
 
-	getRouter.HandleFunc("/person/{id}", GetPersonByIdEndpoint.ServeHTTP)
-	getRouter.HandleFunc("/people", GetPeopleEndpoint.ServeHTTP)
-	getRouter.HandleFunc("/personName/{name}", GetPersonByNameEndpoint.ServeHTTP)
+	getRouter.HandleFunc("/person/{id}", EndpointHandler.GetPersonByIdEndpoint)
+	getRouter.HandleFunc("/people", EndpointHandler.GetPeopleEndpoint)
+	getRouter.HandleFunc("/personName/{name}", EndpointHandler.GetPersonByNameEndpoint)
 
 	postRouter := router.Methods(http.MethodPost).Subrouter()
-	postRouter.HandleFunc("/person", CreatePersonEndpoint.ServeHTTP)
+	postRouter.HandleFunc("/person", EndpointHandler.CreatePersonEndpoint)
+	postRouter.Use(EndpointHandler.MiddlewareValidateProduct)
 
 	http.ListenAndServe("localhost:8080", router)
 

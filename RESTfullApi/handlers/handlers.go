@@ -18,49 +18,23 @@ import (
 )
 
 type (
-	CreatePersonEndpoint struct {
+	EndpointHandler struct {
 		Logger     *log.Logger
 		Collection *mongo.Collection
 	}
 
-	GetPersonByIdEndpoint struct {
-		Logger     *log.Logger
-		Collection *mongo.Collection
-	}
-
-	GetPeopleEndpoint struct {
-		Logger     *log.Logger
-		Collection *mongo.Collection
-	}
-
-	GetPersonByNameEndpoint struct {
-		Logger     *log.Logger
-		Collection *mongo.Collection
-	}
+	KeyProduct struct{}
 )
 
-func (c *CreatePersonEndpoint) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+func (c *EndpointHandler) CreatePersonEndpoint(response http.ResponseWriter, request *http.Request) {
 
 	stop := timer.StartTimer("CreatePersonEndpoint", c.Logger)
 
 	defer stop()
 
 	response.Header().Set("content-type", "application/json")
-	var person data.Person
 
-	err := person.FromJSON(request.Body)
-
-	if err != nil {
-		response.WriteHeader(http.StatusInternalServerError)
-		c.Logger.Printf("Error while marshalling the request body: %v\n", err)
-		return
-	}
-
-	if err1 := person.Validate(); err1 != nil {
-		c.Logger.Printf("Error validating person: %v", err1)
-		http.Error(response, fmt.Sprintf("Error validating person: %v", err1), http.StatusBadRequest)
-		return
-	}
+	person := request.Context().Value(KeyProduct{}).(data.Person)
 
 	collection := c.Collection
 
@@ -86,7 +60,7 @@ func (c *CreatePersonEndpoint) ServeHTTP(response http.ResponseWriter, request *
 
 }
 
-func (c *GetPersonByNameEndpoint) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+func (c *EndpointHandler) GetPersonByNameEndpoint(response http.ResponseWriter, request *http.Request) {
 
 	stop := timer.StartTimer("GetPersonByNameEndpoint", c.Logger)
 
@@ -130,7 +104,7 @@ func (c *GetPersonByNameEndpoint) ServeHTTP(response http.ResponseWriter, reques
 
 }
 
-func (c *GetPersonByIdEndpoint) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+func (c *EndpointHandler) GetPersonByIdEndpoint(response http.ResponseWriter, request *http.Request) {
 
 	stop := timer.StartTimer("GetPersonByIdEndpoint", c.Logger)
 
@@ -182,7 +156,7 @@ func (c *GetPersonByIdEndpoint) ServeHTTP(response http.ResponseWriter, request 
 	}
 }
 
-func (c *GetPeopleEndpoint) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+func (c *EndpointHandler) GetPeopleEndpoint(response http.ResponseWriter, request *http.Request) {
 
 	stop := timer.StartTimer("GetPeopleEndpoint", c.Logger)
 
@@ -220,29 +194,8 @@ func (c *GetPeopleEndpoint) ServeHTTP(response http.ResponseWriter, request *htt
 
 }
 
-func NewGetPersonByIdEndpoint(logger *log.Logger, collection *mongo.Collection) *GetPersonByIdEndpoint {
-	return &GetPersonByIdEndpoint{
-		Logger:     logger,
-		Collection: collection,
-	}
-}
-
-func NewCreatePersonEndpoint(logger *log.Logger, collection *mongo.Collection) *CreatePersonEndpoint {
-	return &CreatePersonEndpoint{
-		Logger:     logger,
-		Collection: collection,
-	}
-}
-
-func NewGetPeopleEndpoint(logger *log.Logger, collection *mongo.Collection) *GetPeopleEndpoint {
-	return &GetPeopleEndpoint{
-		Logger:     logger,
-		Collection: collection,
-	}
-}
-
-func NewGetPersonByNameEndpoint(logger *log.Logger, collection *mongo.Collection) *GetPersonByNameEndpoint {
-	return &GetPersonByNameEndpoint{
+func NewEndpointHandler(logger *log.Logger, collection *mongo.Collection) *EndpointHandler {
+	return &EndpointHandler{
 		Logger:     logger,
 		Collection: collection,
 	}
@@ -268,4 +221,31 @@ func appendPersonFromCursor(cursor *mongo.Cursor, people data.People, ctx contex
 
 	return people
 
+}
+
+func (c *EndpointHandler) MiddlewareValidateProduct(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var person data.Person
+
+		err := person.FromJSON(request.Body)
+
+		if err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			c.Logger.Printf("Error while marshalling the request body: %v\n", err)
+			return
+		}
+
+		if err1 := person.Validate(); err1 != nil {
+			c.Logger.Printf("Error validating person: %v", err1)
+			http.Error(response, fmt.Sprintf("Error validating person: %v", err1), http.StatusBadRequest)
+			return
+		}
+
+		// add the product to the context
+		ctx := context.WithValue(request.Context(), KeyProduct{}, person)
+		request = request.WithContext(ctx)
+
+		// Call the next handler, which can be another middleware in the chain, or the final handler.
+		next.ServeHTTP(response, request)
+	})
 }
