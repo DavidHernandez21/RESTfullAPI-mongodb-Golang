@@ -2,6 +2,7 @@ package data
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 
 	"github.com/go-playground/validator"
@@ -18,6 +19,8 @@ type (
 	People []*Person
 )
 
+var ErrNotFound = errors.New("not found")
+
 func (p *Person) ToJSON(w io.Writer) error {
 
 	return json.NewEncoder(w).Encode(&p)
@@ -29,6 +32,10 @@ func (p *Person) FromJSON(r io.Reader) error {
 }
 
 func (p *People) ToJSON(w io.Writer) error {
+
+	if len(*p) == 0 {
+		return ErrNotFound
+	}
 
 	return json.NewEncoder(w).Encode(&p)
 }

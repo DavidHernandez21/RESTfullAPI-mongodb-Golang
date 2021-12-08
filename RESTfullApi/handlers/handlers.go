@@ -94,6 +94,12 @@ func (c *EndpointHandler) GetPersonByNameEndpoint(response http.ResponseWriter, 
 
 	err1 := people.ToJSON(response)
 
+	if err1 == data.ErrNotFound {
+		c.Logger.Printf("No Person was found with the name: %v", name)
+		response.Write([]byte(`{ "message": "No Person was found with the name: '` + name + `'" }`))
+		return
+	}
+
 	if err1 != nil {
 
 		response.WriteHeader(http.StatusInternalServerError)
