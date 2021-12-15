@@ -2,6 +2,7 @@ package clients
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"os/signal"
@@ -15,7 +16,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func ConnectClient(logger *log.Logger) *mongo.Client {
+func ConnectClient(logger *log.Logger) (*mongo.Client, error) {
 
 	stop := timer.StartTimer("ConnectClient", logger)
 
@@ -23,12 +24,13 @@ func ConnectClient(logger *log.Logger) *mongo.Client {
 
 	if err := godotenv.Load("../.env"); err != nil {
 		logger.Println("No .env file found")
+		return nil, err
 	}
 
 	uri := os.Getenv("MONGODB_URI_WO_DATABASE")
 
 	if uri == "" {
-		logger.Fatal("You must set your 'MONGODB_URI' environmental variable. See\n\t https://docs.mongodb.com/drivers/go/current/usage-examples/")
+		return nil, errors.New("You must set your 'MONGODB_URI' environmental variable. See\n\t https://docs.mongodb.com/drivers/go/current/usage-examples/")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -37,23 +39,25 @@ func ConnectClient(logger *log.Logger) *mongo.Client {
 	client, err := mongo.Connect(ctx, clientOptions)
 
 	if err != nil {
-		logger.Fatalf("Error while connecting to the mongoDB client: %v", err)
+		return nil, err
 	}
 
-	return client
+	return client, nil
 }
 
-func DisconnectClient(client *mongo.Client, logger *log.Logger) {
+func DisconnectClient(client *mongo.Client, logger *log.Logger) error {
 
 	stop := timer.StartTimer("DisconnectClient", logger)
 
 	defer stop()
 
 	if err := client.Disconnect(context.TODO()); err != nil {
-		panic(err)
+		return err
 	}
 
 	logger.Println("mongo client disconnected")
+
+	return nil
 
 }
 
@@ -64,7 +68,9 @@ func CtrlCHandler(client *mongo.Client, logger *log.Logger) {
 	go func() {
 		sig := <-c
 		logger.Printf("- Ctrl+C pressed, exiting\n Signal recieved: %v\n", sig)
-		DisconnectClient(client, logger)
+		if err := DisconnectClient(client, logger); err != nil {
+			logger.Fatalf("Error disconnecting the client: %v\n", err)
+		}
 		os.Exit(0)
 	}()
 }

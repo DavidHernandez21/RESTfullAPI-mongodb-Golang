@@ -16,7 +16,11 @@ func main() {
 
 	logger := log.New(os.Stdout, "mongoDBAtlas-api ", log.LstdFlags)
 
-	client := clients.ConnectClient(logger)
+	client, err := clients.ConnectClient(logger)
+
+	if err != nil {
+		logger.Fatalf("Error while connecting to the mongoDB client: %v", err)
+	}
 
 	collection := client.Database("thepolyglotdeveloper").Collection("people")
 
