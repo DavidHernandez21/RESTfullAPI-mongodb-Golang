@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gorilla/mux"
 
@@ -24,7 +25,9 @@ func main() {
 
 	collection := client.Database("thepolyglotdeveloper").Collection("people")
 
-	EndpointHandler := handlers.NewEndpointHandler(logger, collection)
+	EndpointHandlerPost := handlers.NewEndpointHandler(logger, collection)
+
+	EndpointHandlerGet := handlers.NewEndpointHandler(logger, collection, handlers.WithTimeout(10*time.Second))
 
 	logger.Println("Starting the application...")
 
@@ -38,13 +41,13 @@ func main() {
 
 	getRouter := router.Methods(http.MethodGet).Subrouter()
 
-	getRouter.HandleFunc("/person/{id}", EndpointHandler.GetPersonByIdEndpoint)
-	getRouter.HandleFunc("/people", EndpointHandler.GetPeopleEndpoint)
-	getRouter.HandleFunc("/personName/{name}", EndpointHandler.GetPersonByNameEndpoint)
+	getRouter.HandleFunc("/person/{id}", EndpointHandlerGet.GetPersonByIdEndpoint)
+	getRouter.HandleFunc("/people", EndpointHandlerGet.GetPeopleEndpoint)
+	getRouter.HandleFunc("/personName/{name}", EndpointHandlerGet.GetPersonByNameEndpoint)
 
 	postRouter := router.Methods(http.MethodPost).Subrouter()
-	postRouter.HandleFunc("/person", EndpointHandler.CreatePersonEndpoint)
-	postRouter.Use(EndpointHandler.MiddlewareValidateProduct)
+	postRouter.HandleFunc("/person", EndpointHandlerPost.CreatePersonEndpoint)
+	postRouter.Use(EndpointHandlerPost.MiddlewareValidateProduct)
 
 	http.ListenAndServe("localhost:8080", router)
 
