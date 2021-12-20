@@ -34,7 +34,10 @@ func main() {
 	clients.CtrlCHandler(client, logger)
 
 	defer func() {
-		clients.DisconnectClient(client, logger)
+		err := clients.DisconnectClient(client, logger)
+		if err != nil {
+			logger.Fatalf("Error disconnecting the client: %v\n", err)
+		}
 	}()
 
 	router := mux.NewRouter()
