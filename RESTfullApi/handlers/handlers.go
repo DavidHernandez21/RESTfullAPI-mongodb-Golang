@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github/DavidHernandez21/RESTfullAPi-Golang/RESTfullApi/data"
@@ -71,7 +72,7 @@ func (c *EndpointHandler) GetPersonByNameEndpoint(response http.ResponseWriter, 
 
 	response.Header().Set("content-type", "application/json")
 
-	name := mux.Vars(request)["name"]
+	name := mux.Vars(request)[os.Getenv("NAME_ENDPOINT")]
 
 	collection := c.collection
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)

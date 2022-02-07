@@ -16,21 +16,31 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func ConnectClient(logger *log.Logger) (*mongo.Client, error) {
+func loadEnvFile(logger *log.Logger, filePath string) error {
+
+	if err := godotenv.Load(filePath); err != nil {
+		logger.Println("No .env file found")
+		return err
+	}
+
+	return nil
+
+}
+
+func ConnectClient(logger *log.Logger, envFilePath string) (*mongo.Client, error) {
 
 	stop := timer.StartTimer("ConnectClient", logger)
 
 	defer stop()
 
-	if err := godotenv.Load("../.env"); err != nil {
-		logger.Println("No .env file found")
+	if err := loadEnvFile(logger, envFilePath); err != nil {
 		return nil, err
 	}
 
 	uri := os.Getenv("MONGODB_URI_WO_DATABASE")
 
 	if uri == "" {
-		return nil, errors.New("You must set your 'MONGODB_URI' environmental variable. See\n\t https://docs.mongodb.com/drivers/go/current/usage-examples/")
+		return nil, errors.New("you must set your 'MONGODB_URI' environmental variable. See\n\t https://docs.mongodb.com/drivers/go/current/usage-examples/")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
