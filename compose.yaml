@@ -1,0 +1,22 @@
+version: "3.9"
+services:
+  golang_mongo:
+    image: golang-mongo:0.1.0
+    container_name: "golang_mongo"
+    # hostname: "rabbit-1"
+    environment:
+        - MONGODB_URI=${MONGODB_URI:?err}
+        - MONGODB_URI_WO_DATABASE=${MONGODB_URI_WO_DATABASE:?err}
+        - BIND_ADDRESS=${BIND_ADDRESS:?err}
+        - NAME_ENDPOINT=${NAME_ENDPOINT:?err}
+    # volumes:
+    #     - ${PWD}/config/rabbit-1/:/config/
+    networks:
+        - golang_mongo
+    command: ["/main"]
+    ports:
+      - "8080:8080"
+
+networks:
+  golang_mongo:
+    driver: bridge
