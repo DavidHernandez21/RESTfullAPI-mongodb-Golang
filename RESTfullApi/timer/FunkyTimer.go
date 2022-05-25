@@ -18,16 +18,3 @@ func StartTimer(name string, logger *log.Logger) func() {
 	}
 
 }
-
-// func FunkyFunc() {
-// 	stop := StartTimer("Funkyfunc", l)
-
-// 	defer stop()
-
-// 	time.Sleep(2 * time.Second)
-// }
-
-// func main() {
-
-// 	FunkyFunc()
-// }
