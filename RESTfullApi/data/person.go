@@ -16,6 +16,11 @@ type (
 		Lastname  string             `json:"lastname,omitempty" bson:"lastname,omitempty" validate:"required,alpha,max=15"`
 	}
 
+	PersonUpdate struct {
+		Firstname string `json:"firstname,omitempty" bson:"firstname,omitempty" validate:"required_without=Lastname,max=15"`
+		Lastname  string `json:"lastname,omitempty" bson:"lastname,omitempty" validate:"required_without=Firstname,max=15"`
+	}
+
 	People []*Person
 )
 
@@ -27,6 +32,16 @@ func (p *Person) ToJSON(w io.Writer) error {
 }
 
 func (p *Person) FromJSON(r io.Reader) error {
+
+	return json.NewDecoder(r).Decode(&p)
+}
+
+func (p *PersonUpdate) ToJSON(w io.Writer) error {
+
+	return json.NewEncoder(w).Encode(&p)
+}
+
+func (p *PersonUpdate) FromJSON(r io.Reader) error {
 
 	return json.NewDecoder(r).Decode(&p)
 }
@@ -46,6 +61,13 @@ func (p *People) FromJSON(r io.Reader) error {
 }
 
 func (p *Person) Validate() error {
+
+	validate := validator.New()
+
+	return validate.Struct(p)
+}
+
+func (p *PersonUpdate) Validate() error {
 
 	validate := validator.New()
 

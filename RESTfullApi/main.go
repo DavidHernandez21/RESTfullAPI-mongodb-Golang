@@ -68,6 +68,13 @@ func main() {
 	postRouter.HandleFunc("/person", EndpointHandlerPost.CreatePersonEndpoint)
 	postRouter.Use(EndpointHandlerPost.MiddlewareValidateProduct)
 
+	delRouter := router.Methods(http.MethodDelete).Subrouter()
+	delRouter.HandleFunc("/person/{id}", EndpointHandlerPost.DeletePersonByIdEndpoint)
+
+	updateRouter := router.Methods(http.MethodPut).Subrouter()
+	updateRouter.HandleFunc("/person/{id}", EndpointHandlerPost.UpdatePersonByIdEndpoint)
+	updateRouter.Use(EndpointHandlerPost.MiddlewareValidateUpdateRequest)
+
 	bindAddress := os.Getenv("BIND_ADDRESS")
 
 	if bindAddress == "" {
