@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github/DavidHernandez21/RESTfullAPi-Golang/RESTfullApi/data"
-	"github/DavidHernandez21/RESTfullAPi-Golang/RESTfullApi/timer"
 
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
@@ -34,9 +33,9 @@ type (
 
 func (c *EndpointHandler) CreatePersonEndpoint(response http.ResponseWriter, request *http.Request) {
 
-	stop := timer.StartTimer("CreatePersonEndpoint", c.logger)
+	// stop := timer.StartTimer("CreatePersonEndpoint", c.logger)
 
-	defer stop()
+	// defer stop()
 
 	response.Header().Set("content-type", "application/json")
 
@@ -68,9 +67,9 @@ func (c *EndpointHandler) CreatePersonEndpoint(response http.ResponseWriter, req
 
 func (c *EndpointHandler) GetPersonByNameEndpoint(response http.ResponseWriter, request *http.Request) {
 
-	stop := timer.StartTimer("GetPersonByNameEndpoint", c.logger)
+	// stop := timer.StartTimer("GetPersonByNameEndpoint", c.logger)
 
-	defer stop()
+	// defer stop()
 
 	response.Header().Set("content-type", "application/json")
 
@@ -126,9 +125,9 @@ func (c *EndpointHandler) GetPersonByNameEndpoint(response http.ResponseWriter, 
 
 func (c *EndpointHandler) GetPersonByIdEndpoint(response http.ResponseWriter, request *http.Request) {
 
-	stop := timer.StartTimer("GetPersonByIdEndpoint", c.logger)
+	// stop := timer.StartTimer("GetPersonByIdEndpoint", c.logger)
 
-	defer stop()
+	// defer stop()
 
 	response.Header().Set("content-type", "application/json")
 	paramsId := mux.Vars(request)["id"]
@@ -180,9 +179,9 @@ func (c *EndpointHandler) GetPersonByIdEndpoint(response http.ResponseWriter, re
 
 func (c *EndpointHandler) DeletePersonByIdEndpoint(response http.ResponseWriter, request *http.Request) {
 
-	stop := timer.StartTimer("DeletePersonByIdEndpoint", c.logger)
+	// stop := timer.StartTimer("DeletePersonByIdEndpoint", c.logger)
 
-	defer stop()
+	// defer stop()
 
 	response.Header().Set("content-type", "application/json")
 	paramsId := mux.Vars(request)["id"]
@@ -224,9 +223,9 @@ func (c *EndpointHandler) DeletePersonByIdEndpoint(response http.ResponseWriter,
 
 func (c *EndpointHandler) UpdatePersonByIdEndpoint(response http.ResponseWriter, request *http.Request) {
 
-	stop := timer.StartTimer("UpdatePersonByIdEndpoint", c.logger)
+	// stop := timer.StartTimer("UpdatePersonByIdEndpoint", c.logger)
 
-	defer stop()
+	// defer stop()
 
 	response.Header().Set("content-type", "application/json")
 	paramsId := mux.Vars(request)["id"]
@@ -300,9 +299,9 @@ func (c *EndpointHandler) UpdatePersonByIdEndpoint(response http.ResponseWriter,
 
 func (c *EndpointHandler) GetPeopleEndpoint(response http.ResponseWriter, request *http.Request) {
 
-	stop := timer.StartTimer("GetPeopleEndpoint", c.logger)
+	// stop := timer.StartTimer("GetPeopleEndpoint", c.logger)
 
-	defer stop()
+	// defer stop()
 
 	response.Header().Set("content-type", "application/json")
 
@@ -362,9 +361,9 @@ func NewEndpointHandler(logger *log.Logger, collection *mongo.Collection, opts .
 
 func appendPersonFromCursor(cursor *mongo.Cursor, people data.People, ctx context.Context, response http.ResponseWriter, logger *log.Logger) (data.People, error) {
 
-	stop := timer.StartTimer("appendPersonFromCursor", logger)
+	// stop := timer.StartTimer("appendPersonFromCursor", logger)
 
-	defer stop()
+	// defer stop()
 
 	for cursor.Next(ctx) {
 

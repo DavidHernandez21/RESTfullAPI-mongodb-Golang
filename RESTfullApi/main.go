@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -15,12 +16,18 @@ import (
 	"github/DavidHernandez21/RESTfullAPi-Golang/RESTfullApi/handlers"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 var envFilePath string
 
 func init() {
 	flag.StringVar(&envFilePath, "envFilePath", "../.env", "path to .env file")
+	prometheus.Register(totalRequests)
+	prometheus.Register(responseStatus)
+	prometheus.Register(httpDuration)
 
 }
 
@@ -54,6 +61,7 @@ func main() {
 	}()
 
 	router := mux.NewRouter()
+	router.Use(prometheusMiddleware)
 
 	getRouter := router.Methods(http.MethodGet).Subrouter()
 
@@ -62,7 +70,7 @@ func main() {
 	getRouter.HandleFunc("/person/{id}", EndpointHandlerGet.GetPersonByIdEndpoint)
 	getRouter.HandleFunc("/people", EndpointHandlerGet.GetPeopleEndpoint)
 	getRouter.HandleFunc(fmt.Sprintf("/personName/{%v}", nameEndpoint), EndpointHandlerGet.GetPersonByNameEndpoint)
-	getRouter.Handle("/metrics", promhttp.Handler())
+	getRouter.Handle(os.Getenv("METRICS_ENDPOINT"), promhttp.Handler())
 
 	postRouter := router.Methods(http.MethodPost).Subrouter()
 	postRouter.HandleFunc("/person", EndpointHandlerPost.CreatePersonEndpoint)
@@ -92,4 +100,73 @@ func main() {
 
 	logger.Fatal(s.ListenAndServe())
 
+}
+
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func NewResponseWriter(w http.ResponseWriter) *responseWriter {
+	return &responseWriter{w, http.StatusOK}
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+var totalRequests = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "http_requests_total",
+		Help: "Number of get requests.",
+	},
+	[]string{"path", "method"},
+)
+
+var responseStatus = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "response_status",
+		Help: "Status of HTTP response",
+	},
+	[]string{"status", "method"},
+)
+
+var httpDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Name: "http_response_time_seconds",
+	Help: "Duration of HTTP requests.",
+}, []string{"path", "method"})
+
+func prometheusMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		route := mux.CurrentRoute(r)
+		method, err := route.GetMethods()
+
+		if err != nil {
+			method = []string{"unknown"}
+		}
+
+		path, err := route.GetPathTemplate()
+
+		// log.Printf("path: %s\n", path)
+		if path == os.Getenv("METRICS_ENDPOINT") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if err != nil {
+			path = "unknown"
+		}
+
+		timer := prometheus.NewTimer(httpDuration.WithLabelValues(path, method[0]))
+		rw := NewResponseWriter(w)
+		next.ServeHTTP(rw, r)
+
+		statusCode := rw.statusCode
+
+		responseStatus.WithLabelValues(strconv.Itoa(statusCode), method[0]).Inc()
+		totalRequests.WithLabelValues(path, method[0]).Inc()
+
+		timer.ObserveDuration()
+	})
 }

@@ -8,3 +8,8 @@ Took many stuff from [Nick Jackson's videos](https://github.com/nicholasjackson/
 
 I have added a Dockerfile and compose file to dockerize the app. Next steps are monitor the app with [prometheus](https://prometheus.io/), maybe following [Gabriel Tanner's blog](https://gabrieltanner.org/blog/collecting-prometheus-metrics-in-golang)
 
+
+## Grafana
+- data source
+    + URL http//prometheus:9090
+
