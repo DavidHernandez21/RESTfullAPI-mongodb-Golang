@@ -1,0 +1,56 @@
+version: "3.9"
+services:
+  golang_mongo:
+    image: golang-mongo:0.2.1
+    container_name: "golang_mongo"
+    # hostname: "rabbit-1"
+    environment:
+        - MONGODB_URI=${MONGODB_URI:?err}
+        - MONGODB_URI_WO_DATABASE=${MONGODB_URI_WO_DATABASE:?err}
+        - BIND_ADDRESS=${BIND_ADDRESS:?err}
+        - NAME_ENDPOINT=${NAME_ENDPOINT:?err}
+        - METRICS_ENDPOINT=${METRICS_ENDPOINT:?err}
+    # volumes:
+    #     - ${PWD}/config/rabbit-1/:/config/
+    networks:
+        - golang_mongo
+    command: ["./main"]
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+  
+  prometheus:
+    image: prom/prometheus
+    container_name: "prometheus"
+    volumes:
+      - ./prometheus/:/etc/prometheus/
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yaml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - 9090:9090
+    restart: unless-stopped
+    networks:
+        - golang_mongo
+  
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    networks:
+      - golang_mongo
+
+
+volumes:
+  prometheus_data:
+  grafana-storage:
+
+networks:
+  golang_mongo:
+    driver: bridge

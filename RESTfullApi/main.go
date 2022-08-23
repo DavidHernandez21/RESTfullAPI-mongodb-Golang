@@ -1,22 +1,58 @@
 package main
 
 import (
+	"context"
+	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 
 	"github/DavidHernandez21/RESTfullAPi-Golang/RESTfullApi/clients"
 
 	"github/DavidHernandez21/RESTfullAPi-Golang/RESTfullApi/handlers"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
+
+var (
+	envFilePath string
+	timeout     time.Duration
+)
+
+func init() {
+	flag.StringVar(&envFilePath, "envFilePath", "../.env", "path to .env file")
+	flag.DurationVar(&timeout, "timeout", 10, "timeout in seconds")
+
+}
 
 func main() {
 
+	flag.Parse()
+
 	logger := log.New(os.Stdout, "mongoDBAtlas-api ", log.LstdFlags)
 
-	client, err := clients.ConnectClient(logger)
+	if err := prometheus.Register(totalRequests); err != nil {
+		logger.Println("Faled to register totalRequests:", err)
+
+	}
+	if err := prometheus.Register(responseStatus); err != nil {
+		logger.Println("Faled to register responseStatus:", err)
+
+	}
+	if err := prometheus.Register(httpDuration); err != nil {
+		logger.Println("Faled to register httpDuration:", err)
+
+	}
+
+	client, err := clients.ConnectClient(logger, envFilePath)
 
 	if err != nil {
 		logger.Fatalf("Error while connecting to the mongoDB client: %v", err)
@@ -24,28 +60,127 @@ func main() {
 
 	collection := client.Database("thepolyglotdeveloper").Collection("people")
 
-	EndpointHandler := handlers.NewEndpointHandler(logger, collection)
+	EndpointHandlerPost := handlers.NewEndpointHandler(logger, collection)
 
-	logger.Println("Starting the application...")
-
-	clients.CtrlCHandler(client, logger)
-
-	defer func() {
-		clients.DisconnectClient(client, logger)
-	}()
+	EndpointHandlerGet := handlers.NewEndpointHandler(logger, collection, handlers.WithTimeout(10*time.Second))
 
 	router := mux.NewRouter()
+	router.Use(prometheusMiddleware)
 
 	getRouter := router.Methods(http.MethodGet).Subrouter()
 
-	getRouter.HandleFunc("/person/{id}", EndpointHandler.GetPersonByIdEndpoint)
-	getRouter.HandleFunc("/people", EndpointHandler.GetPeopleEndpoint)
-	getRouter.HandleFunc("/personName/{name}", EndpointHandler.GetPersonByNameEndpoint)
+	nameEndpoint := os.Getenv("NAME_ENDPOINT")
+
+	getRouter.HandleFunc("/person/{id}", EndpointHandlerGet.GetPersonByIdEndpoint)
+	getRouter.HandleFunc("/people", EndpointHandlerGet.GetPeopleEndpoint)
+	getRouter.HandleFunc(fmt.Sprintf("/personName/{%v}", nameEndpoint), EndpointHandlerGet.GetPersonByNameEndpoint)
+	getRouter.Handle(os.Getenv("METRICS_ENDPOINT"), promhttp.Handler())
 
 	postRouter := router.Methods(http.MethodPost).Subrouter()
-	postRouter.HandleFunc("/person", EndpointHandler.CreatePersonEndpoint)
-	postRouter.Use(EndpointHandler.MiddlewareValidateProduct)
+	postRouter.HandleFunc("/person", EndpointHandlerPost.CreatePersonEndpoint)
+	postRouter.Use(EndpointHandlerPost.MiddlewareValidateProduct)
 
-	http.ListenAndServe("localhost:8080", router)
+	delRouter := router.Methods(http.MethodDelete).Subrouter()
+	delRouter.HandleFunc("/person/{id}", EndpointHandlerPost.DeletePersonByIdEndpoint)
 
+	updateRouter := router.Methods(http.MethodPut).Subrouter()
+	updateRouter.HandleFunc("/person/{id}", EndpointHandlerPost.UpdatePersonByIdEndpoint)
+	updateRouter.Use(EndpointHandlerPost.MiddlewareValidateUpdateRequest)
+
+	bindAddress := os.Getenv("BIND_ADDRESS")
+
+	if bindAddress == "" {
+		bindAddress = "localhost:8080"
+	}
+
+	s := http.Server{
+		Addr:         bindAddress,       // configure the bind address
+		Handler:      router,            // set the default handler
+		ErrorLog:     logger,            // set the logger for the server
+		ReadTimeout:  5 * time.Second,   // max time to read request from the client
+		WriteTimeout: 10 * time.Second,  // max time to write response to the client
+		IdleTimeout:  120 * time.Second, // max time for connections using TCP Keep-Alive
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Second)
+	defer cancel()
+
+	clients.CtrlCHandler(ctx, client, logger, &s)
+
+	logger.Println("Starting the application...")
+
+	err = s.ListenAndServe()
+	if err == http.ErrServerClosed {
+		logger.Println("Server closed under request")
+	}
+
+}
+
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func NewResponseWriter(w http.ResponseWriter) *responseWriter {
+	return &responseWriter{w, http.StatusOK}
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+var totalRequests = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "http_requests_total",
+		Help: "Number of get requests.",
+	},
+	[]string{"path", "method"},
+)
+
+var responseStatus = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "response_status",
+		Help: "Status of HTTP response",
+	},
+	[]string{"status", "method"},
+)
+
+var httpDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Name: "http_response_time_seconds",
+	Help: "Duration of HTTP requests.",
+}, []string{"path", "method"})
+
+func prometheusMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		route := mux.CurrentRoute(r)
+		method, err := route.GetMethods()
+
+		if err != nil {
+			method = []string{"unknown"}
+		}
+
+		path, err := route.GetPathTemplate()
+
+		// log.Printf("path: %s\n", path)
+		if path == os.Getenv("METRICS_ENDPOINT") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if err != nil {
+			path = "unknown"
+		}
+
+		timer := prometheus.NewTimer(httpDuration.WithLabelValues(path, method[0]))
+		rw := NewResponseWriter(w)
+		next.ServeHTTP(rw, r)
+
+		statusCode := rw.statusCode
+
+		responseStatus.WithLabelValues(strconv.Itoa(statusCode), method[0]).Inc()
+		totalRequests.WithLabelValues(path, method[0]).Inc()
+
+		timer.ObserveDuration()
+	})
 }
