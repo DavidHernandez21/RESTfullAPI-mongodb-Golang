@@ -1,6 +1,4 @@
-# syntax=docker/dockerfile:1
-
-FROM golang:1.18-alpine as builder
+FROM golang:1.19-alpine as builder
 
 WORKDIR /app
 
@@ -15,10 +13,10 @@ RUN cd RESTfullApi/ && go build  -ldflags="-w -s" -o main
 
 FROM alpine
 
-WORKDIR /
+WORKDIR /app
 
 # COPY --from=builder RESTfullApi/main main
-COPY --from=builder app/RESTfullApi/main main
+COPY --from=builder /app/RESTfullApi/main /app/main
 
 # USER nonroot:nonroot
 
