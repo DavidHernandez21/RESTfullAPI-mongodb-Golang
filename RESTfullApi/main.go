@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -21,13 +22,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-var envFilePath string
+var (
+	envFilePath string
+	timeout     time.Duration
+)
 
 func init() {
 	flag.StringVar(&envFilePath, "envFilePath", "../.env", "path to .env file")
-	prometheus.Register(totalRequests)
-	prometheus.Register(responseStatus)
-	prometheus.Register(httpDuration)
+	flag.DurationVar(&timeout, "timeout", 10, "timeout in seconds")
 
 }
 
@@ -36,6 +38,19 @@ func main() {
 	flag.Parse()
 
 	logger := log.New(os.Stdout, "mongoDBAtlas-api ", log.LstdFlags)
+
+	if err := prometheus.Register(totalRequests); err != nil {
+		logger.Println("Faled to register totalRequests:", err)
+
+	}
+	if err := prometheus.Register(responseStatus); err != nil {
+		logger.Println("Faled to register responseStatus:", err)
+
+	}
+	if err := prometheus.Register(httpDuration); err != nil {
+		logger.Println("Faled to register httpDuration:", err)
+
+	}
 
 	client, err := clients.ConnectClient(logger, envFilePath)
 
@@ -48,17 +63,6 @@ func main() {
 	EndpointHandlerPost := handlers.NewEndpointHandler(logger, collection)
 
 	EndpointHandlerGet := handlers.NewEndpointHandler(logger, collection, handlers.WithTimeout(10*time.Second))
-
-	logger.Println("Starting the application...")
-
-	clients.CtrlCHandler(client, logger)
-
-	defer func() {
-		err := clients.DisconnectClient(client, logger)
-		if err != nil {
-			logger.Fatalf("Error disconnecting the client: %v\n", err)
-		}
-	}()
 
 	router := mux.NewRouter()
 	router.Use(prometheusMiddleware)
@@ -98,7 +102,17 @@ func main() {
 		IdleTimeout:  120 * time.Second, // max time for connections using TCP Keep-Alive
 	}
 
-	logger.Fatal(s.ListenAndServe())
+	ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Second)
+	defer cancel()
+
+	clients.CtrlCHandler(ctx, client, logger, &s)
+
+	logger.Println("Starting the application...")
+
+	err = s.ListenAndServe()
+	if err == http.ErrServerClosed {
+		logger.Println("Server closed under request")
+	}
 
 }
 
