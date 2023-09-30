@@ -41,25 +41,23 @@ func (c *EndpointHandler) CreatePersonEndpoint(response http.ResponseWriter, req
 
 	person := request.Context().Value(keyProduct{}).(data.Person)
 
-	collection := c.collection
-
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
-	result, err2 := collection.InsertOne(ctx, person)
+	result, err := c.collection.InsertOne(ctx, person)
 
-	if err2 != nil {
+	if err != nil {
 
 		http.Error(response, "Internal Error", http.StatusInternalServerError)
-		c.logger.Printf("Error while inserting the person: %v \n%v\n", person, err2)
+		c.logger.Printf("Error while inserting the person: %v \n%v\n", person, err)
 		return
 	}
 
-	err3 := json.NewEncoder(response).Encode(result)
+	err = json.NewEncoder(response).Encode(result)
 
-	if err3 != nil {
+	if err != nil {
 
 		http.Error(response, "Internal Error", http.StatusInternalServerError)
-		c.logger.Printf("Error while marshalling the result: %v \n%v\n", result, err3)
+		c.logger.Printf("Error while marshalling the result: %v \n%v\n", result, err)
 		return
 	}
 
@@ -75,7 +73,6 @@ func (c *EndpointHandler) GetPersonByNameEndpoint(response http.ResponseWriter, 
 
 	name := mux.Vars(request)[os.Getenv("NAME_ENDPOINT")]
 
-	collection := c.collection
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 
 	defer cancel()
@@ -84,7 +81,14 @@ func (c *EndpointHandler) GetPersonByNameEndpoint(response http.ResponseWriter, 
 
 	regexValue := primitive.Regex{Pattern: pattern, Options: "i"}
 
-	cursor, err := collection.Find(ctx, bson.D{primitive.E{Key: "firstname", Value: bson.D{primitive.E{Key: "$regex", Value: regexValue}}}})
+	cursor, err := c.collection.Find(ctx, bson.D{primitive.E{Key: "firstname", Value: bson.D{primitive.E{Key: "$regex", Value: regexValue}}}})
+
+	defer func() {
+		if err := cursor.Close(ctx); err != nil {
+			c.logger.Printf("Error closing cursor: %v\n", err)
+		}
+	}()
+
 	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
 		c.logger.Printf("Error while querying the collection: %v \n%v\n", name, err)
@@ -95,7 +99,6 @@ func (c *EndpointHandler) GetPersonByNameEndpoint(response http.ResponseWriter, 
 
 		return
 	}
-	defer cursor.Close(ctx)
 
 	var people data.People
 
@@ -110,9 +113,9 @@ func (c *EndpointHandler) GetPersonByNameEndpoint(response http.ResponseWriter, 
 		return
 	}
 
-	err1 := people.ToJSON(response)
+	err = people.ToJSON(response)
 
-	if err1 == data.ErrNotFound {
+	if err == data.ErrNotFound {
 		c.logger.Printf("No Person was found with the name: %v", name)
 		_, err := response.Write([]byte(`{ "message": "No Person was found with the name: '` + name + `'" }`))
 		if err != nil {
@@ -121,11 +124,11 @@ func (c *EndpointHandler) GetPersonByNameEndpoint(response http.ResponseWriter, 
 		return
 	}
 
-	if err1 != nil {
+	if err != nil {
 
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error while marshalling the result: %v \n%v\n", people, err1)
-		_, err := response.Write([]byte(`{ "message": "` + err1.Error() + `" }`))
+		c.logger.Printf("Error while marshalling the result: %v \n%v\n", people, err)
+		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
 			c.logger.Printf("Error while writing the error response: %v\n", err)
 		}
@@ -137,7 +140,7 @@ func (c *EndpointHandler) GetPersonByNameEndpoint(response http.ResponseWriter, 
 
 func (c *EndpointHandler) GetPersonByIdEndpoint(response http.ResponseWriter, request *http.Request) {
 
-	// stop := timer.StartTimer("GetPersonByIdEndpoint", c.logger)
+	// stop := timer.StartTimer("GetPersonById", c.logger)
 
 	// defer stop()
 
@@ -158,12 +161,11 @@ func (c *EndpointHandler) GetPersonByIdEndpoint(response http.ResponseWriter, re
 
 	var person data.Person
 
-	collection := c.collection
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 
 	defer cancel()
 
-	err := collection.FindOne(ctx, bson.D{{
+	err := c.collection.FindOne(ctx, bson.D{{
 		Key: "_id", Value: id,
 	}}).Decode(&person)
 
@@ -186,13 +188,13 @@ func (c *EndpointHandler) GetPersonByIdEndpoint(response http.ResponseWriter, re
 		return
 	}
 
-	err1 := person.ToJSON(response)
+	err = person.ToJSON(response)
 
-	if err1 != nil {
+	if err != nil {
 
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error while marshalling the result: %v \n%v\n", person, err1)
-		_, err := response.Write([]byte(`{ "message": "` + err1.Error() + `" }`))
+		c.logger.Printf("Error while marshalling the result: %v \n%v\n", person, err)
+		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
 			c.logger.Printf("Error while writing the error response: %v\n", err)
 		}
@@ -210,12 +212,12 @@ func (c *EndpointHandler) DeletePersonByIdEndpoint(response http.ResponseWriter,
 	response.Header().Set("content-type", "application/json")
 	paramsId := mux.Vars(request)["id"]
 
-	id, errId := primitive.ObjectIDFromHex(paramsId)
+	id, err := primitive.ObjectIDFromHex(paramsId)
 
-	if errId != nil {
+	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error while parsing the id: %v \n%v\n", paramsId, errId)
-		_, err := response.Write([]byte(`{ "message": "` + errId.Error() + `" }`))
+		c.logger.Printf("Error while parsing the id: %v \n%v\n", paramsId, err)
+		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
 			c.logger.Printf("Error while writing the error response: %v\n", err)
 		}
@@ -224,12 +226,11 @@ func (c *EndpointHandler) DeletePersonByIdEndpoint(response http.ResponseWriter,
 
 	// var person data.Person
 
-	collection := c.collection
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 
 	defer cancel()
 
-	deleteResult, err := collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
+	deleteResult, err := c.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
 
 	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
@@ -266,12 +267,12 @@ func (c *EndpointHandler) UpdatePersonByIdEndpoint(response http.ResponseWriter,
 	response.Header().Set("content-type", "application/json")
 	paramsId := mux.Vars(request)["id"]
 
-	id, errId := primitive.ObjectIDFromHex(paramsId)
+	id, err := primitive.ObjectIDFromHex(paramsId)
 
-	if errId != nil {
+	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error while parsing the id: %v \n%v\n", paramsId, errId)
-		_, err := response.Write([]byte(`{ "message": "` + errId.Error() + `" }`))
+		c.logger.Printf("Error while parsing the id: %v \n%v\n", paramsId, err)
+		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
 			c.logger.Printf("Error while writing the error response: %v\n", err)
 		}
@@ -282,12 +283,12 @@ func (c *EndpointHandler) UpdatePersonByIdEndpoint(response http.ResponseWriter,
 
 	person := request.Context().Value(keyProduct{}).(data.PersonUpdate)
 
-	personJson, errMarshalling := json.Marshal(person)
+	personJson, err := json.Marshal(person)
 	// c.logger.Printf("%s\n", personJson)
 
-	if errMarshalling != nil {
+	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error marshalling a Person: %v", errMarshalling)
+		c.logger.Printf("Error marshalling a Person: %v", err)
 		_, err := response.Write([]byte(`{ "message": "Error processing the request" }`))
 		if err != nil {
 			c.logger.Printf("Error while writing the error response: %v\n", err)
@@ -295,7 +296,6 @@ func (c *EndpointHandler) UpdatePersonByIdEndpoint(response http.ResponseWriter,
 		return
 	}
 
-	collection := c.collection
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 
 	defer cancel()
@@ -309,6 +309,7 @@ func (c *EndpointHandler) UpdatePersonByIdEndpoint(response http.ResponseWriter,
 
 	lenKeystoUpdate := len(keyValueSliceToUpdate)
 
+	collection := c.collection
 	var updateResultsSum int64
 	for i := 0; i < lenKeystoUpdate; i = i + 2 {
 		updateResult, err := collection.UpdateByID(
@@ -341,7 +342,7 @@ func (c *EndpointHandler) UpdatePersonByIdEndpoint(response http.ResponseWriter,
 		return
 	}
 
-	_, err := response.Write([]byte(`{ "message": "Person with id: ` + paramsId + ` was updated" }`))
+	_, err = response.Write([]byte(`{ "message": "Person with id: ` + paramsId + ` was updated" }`))
 	if err != nil {
 		c.logger.Printf("Error while writing the update response: %v\n", err)
 	}
@@ -358,12 +359,18 @@ func (c *EndpointHandler) GetPeopleEndpoint(response http.ResponseWriter, reques
 
 	var people data.People
 
-	collection := c.collection
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 
 	defer cancel()
 
-	cursor, err := collection.Find(ctx, bson.M{})
+	cursor, err := c.collection.Find(ctx, bson.M{})
+
+	defer func() {
+		if err := cursor.Close(ctx); err != nil {
+			c.logger.Printf("Error closing cursor: %v\n", err)
+		}
+	}()
+
 	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
 		c.logger.Printf("Error while finding all documents: %v", err)
@@ -374,7 +381,6 @@ func (c *EndpointHandler) GetPeopleEndpoint(response http.ResponseWriter, reques
 
 		return
 	}
-	defer cursor.Close(ctx)
 
 	people, err = appendPersonFromCursor(cursor, people, ctx, response, c.logger)
 	if err != nil {
@@ -387,13 +393,13 @@ func (c *EndpointHandler) GetPeopleEndpoint(response http.ResponseWriter, reques
 		return
 	}
 
-	err2 := people.ToJSON(response)
+	err = people.ToJSON(response)
 
-	if err2 != nil {
+	if err != nil {
 
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error while marshalling the result: %v \n%v\n", people, err2)
-		_, err := response.Write([]byte(`{ "message": "` + err2.Error() + `" }`))
+		c.logger.Printf("Error while marshalling the result: %v \n%v\n", people, err)
+		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
 			c.logger.Printf("Error while writing the error response: %v\n", err)
 		}
@@ -462,9 +468,9 @@ func (c *EndpointHandler) MiddlewareValidateProduct(next http.Handler) http.Hand
 			return
 		}
 
-		if err1 := person.Validate(); err1 != nil {
-			c.logger.Printf("Error validating person: %v", err1)
-			http.Error(response, fmt.Sprintf("Error validating person: %v", err1), http.StatusBadRequest)
+		if err := person.Validate(); err != nil {
+			c.logger.Printf("Error validating person: %v", err)
+			http.Error(response, fmt.Sprintf("Error validating person: %v", err), http.StatusBadRequest)
 			return
 		}
 
@@ -489,9 +495,9 @@ func (c *EndpointHandler) MiddlewareValidateUpdateRequest(next http.Handler) htt
 			return
 		}
 
-		if err1 := person.Validate(); err1 != nil {
-			c.logger.Printf("Error validating person: %v", err1)
-			http.Error(response, fmt.Sprintf("Error validating person: %v", err1), http.StatusBadRequest)
+		if err := person.Validate(); err != nil {
+			c.logger.Printf("Error validating person: %v", err)
+			http.Error(response, fmt.Sprintf("Error validating person: %v", err), http.StatusBadRequest)
 			return
 		}
 
