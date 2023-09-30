@@ -1,1 +1,4 @@
 .env
+.golangci.yaml
+compose.yaml
+readme.md

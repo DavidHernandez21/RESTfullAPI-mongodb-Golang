@@ -1,4 +1,4 @@
-FROM golang:1.19-alpine as builder
+FROM golang:1.21-alpine as builder
 
 WORKDIR /app
 
@@ -9,7 +9,11 @@ RUN go mod download
 
 COPY RESTfullApi/ RESTfullApi/ 
 
-RUN cd RESTfullApi/ && go build  -ldflags="-w -s" -o main
+# We can further reduce the size with -ldflags= "-s -w", removing the DWARF
+# and symbols tables with other debug information. I would not recommend the
+# latter option, as non-DWARF elements allow important runtime routines, like
+# gathering profiles
+RUN cd RESTfullApi/ && go build  -ldflags="-w" -o main
 
 FROM alpine
 
