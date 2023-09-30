@@ -7,19 +7,21 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
 
 	"github/DavidHernandez21/RESTfullAPi-Golang/RESTfullApi/clients"
+	"github/DavidHernandez21/RESTfullAPi-Golang/RESTfullApi/observability"
 
 	"github/DavidHernandez21/RESTfullAPi-Golang/RESTfullApi/handlers"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"net/http/pprof"
+	// _ "net/http/pprof"
 )
 
 var (
@@ -39,15 +41,15 @@ func main() {
 
 	logger := log.New(os.Stdout, "mongoDBAtlas-api ", log.LstdFlags)
 
-	if err := prometheus.Register(totalRequests); err != nil {
+	if err := prometheus.Register(observability.TotalRequests); err != nil {
 		logger.Println("Faled to register totalRequests:", err)
 
 	}
-	if err := prometheus.Register(responseStatus); err != nil {
+	if err := prometheus.Register(observability.ResponseStatus); err != nil {
 		logger.Println("Faled to register responseStatus:", err)
 
 	}
-	if err := prometheus.Register(httpDuration); err != nil {
+	if err := prometheus.Register(observability.HTTPDuration); err != nil {
 		logger.Println("Faled to register httpDuration:", err)
 
 	}
@@ -65,7 +67,20 @@ func main() {
 	EndpointHandlerGet := handlers.NewEndpointHandler(logger, collection, handlers.WithTimeout(10*time.Second))
 
 	router := mux.NewRouter()
-	router.Use(prometheusMiddleware)
+
+	// debug pprof
+	router.HandleFunc("/debug/pprof/", http.HandlerFunc(pprof.Index))
+	router.HandleFunc("/debug/pprof/profile", http.HandlerFunc(pprof.Profile))
+	router.HandleFunc("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
+	router.HandleFunc("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
+	router.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+	router.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+	router.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
+	router.Handle("/debug/pprof/block", pprof.Handler("block"))
+	// allocs
+	router.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+
+	router.Use(observability.PrometheusMiddleware)
 
 	getRouter := router.Methods(http.MethodGet).Subrouter()
 
@@ -90,15 +105,15 @@ func main() {
 	bindAddress := os.Getenv("BIND_ADDRESS")
 
 	if bindAddress == "" {
-		bindAddress = "localhost:8080"
+		bindAddress = "127.0.0.1:8080"
 	}
 
 	s := http.Server{
 		Addr:         bindAddress,       // configure the bind address
 		Handler:      router,            // set the default handler
 		ErrorLog:     logger,            // set the logger for the server
-		ReadTimeout:  5 * time.Second,   // max time to read request from the client
-		WriteTimeout: 10 * time.Second,  // max time to write response to the client
+		ReadTimeout:  30 * time.Second,  // max time to read request from the client
+		WriteTimeout: 300 * time.Second, // max time to write response to the client
 		IdleTimeout:  120 * time.Second, // max time for connections using TCP Keep-Alive
 	}
 
@@ -114,73 +129,4 @@ func main() {
 		logger.Println("Server closed under request")
 	}
 
-}
-
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func NewResponseWriter(w http.ResponseWriter) *responseWriter {
-	return &responseWriter{w, http.StatusOK}
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-
-var totalRequests = prometheus.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "http_requests_total",
-		Help: "Number of get requests.",
-	},
-	[]string{"path", "method"},
-)
-
-var responseStatus = prometheus.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "response_status",
-		Help: "Status of HTTP response",
-	},
-	[]string{"status", "method"},
-)
-
-var httpDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Name: "http_response_time_seconds",
-	Help: "Duration of HTTP requests.",
-}, []string{"path", "method"})
-
-func prometheusMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		route := mux.CurrentRoute(r)
-		method, err := route.GetMethods()
-
-		if err != nil {
-			method = []string{"unknown"}
-		}
-
-		path, err := route.GetPathTemplate()
-
-		// log.Printf("path: %s\n", path)
-		if path == os.Getenv("METRICS_ENDPOINT") {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		if err != nil {
-			path = "unknown"
-		}
-
-		timer := prometheus.NewTimer(httpDuration.WithLabelValues(path, method[0]))
-		rw := NewResponseWriter(w)
-		next.ServeHTTP(rw, r)
-
-		statusCode := rw.statusCode
-
-		responseStatus.WithLabelValues(strconv.Itoa(statusCode), method[0]).Inc()
-		totalRequests.WithLabelValues(path, method[0]).Inc()
-
-		timer.ObserveDuration()
-	})
 }
