@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -31,13 +32,46 @@ type (
 	option func(handler *EndpointHandler)
 )
 
+const (
+	setContentType              = "content-type"
+	jsonType                    = "application/json"
+	internalError               = "Internal Error"
+	errorInserting              = "Error while inserting the person: %v \n%v\n"
+	errorMarshalling            = "Error while marshalling the result: %v \n%v\n"
+	errorExausting              = "Error while exausting the request body: %v\n"
+	errorQuerying               = "Error while querying the collection: %v \n%v\n"
+	errorWrittingResponse       = "Error while writing the error response: %v\n"
+	errorretrievingFromCursor   = "Error retrieving results from cursor: %v\n"
+	errorClosingCursor          = "Error closing cursor: %v\n"
+	errorFindingAllDocuments    = "Error while finding all documents: %v"
+	errorParsingID              = "Error while parsing the id: %v \n%v\n"
+	errorDeletingDocument       = "Error while deleting a document: %v \n%v\n"
+	errorFindingDocument        = "Error while finding a document: %v \n%v\n"
+	errorWrittingClientResponse = "Error while writing the client response: %v\n"
+	errorMarshallingPerson      = "Error marshalling a Person: %v"
+	errorUpdatingPerson         = "Error updating a Person: %v\n%v\n"
+	errorWrittingUpdate         = "Error while writing the no update operation response: %v\n"
+	errorValidatingPerson       = "Error validating person: %v"
+	errorMarshallingBody        = "Error while marshalling the request body: %v\n"
+	noPersonFound               = "No Person was found with the name: %v"
+	noIDFound                   = "No Person was found with the id: %v"
+	noUpdateOperation           = "No update operation was done to document with id: %v"
+)
+
+func exaustRequestBody(r io.ReadCloser, log *log.Logger) {
+	_, copyErr := io.Copy(io.Discard, r)
+	if copyErr != nil {
+		log.Printf(errorExausting, copyErr)
+	}
+}
+
 func (c *EndpointHandler) CreatePersonEndpoint(response http.ResponseWriter, request *http.Request) {
 
 	// stop := timer.StartTimer("CreatePersonEndpoint", c.logger)
 
 	// defer stop()
 
-	response.Header().Set("content-type", "application/json")
+	response.Header().Set(setContentType, jsonType)
 
 	person := request.Context().Value(keyProduct{}).(data.Person)
 
@@ -47,8 +81,10 @@ func (c *EndpointHandler) CreatePersonEndpoint(response http.ResponseWriter, req
 
 	if err != nil {
 
-		http.Error(response, "Internal Error", http.StatusInternalServerError)
-		c.logger.Printf("Error while inserting the person: %v \n%v\n", person, err)
+		http.Error(response, internalError, http.StatusInternalServerError)
+		c.logger.Printf(errorInserting, person, err)
+		// exaust the request body
+		exaustRequestBody(request.Body, c.logger)
 		return
 	}
 
@@ -56,10 +92,13 @@ func (c *EndpointHandler) CreatePersonEndpoint(response http.ResponseWriter, req
 
 	if err != nil {
 
-		http.Error(response, "Internal Error", http.StatusInternalServerError)
-		c.logger.Printf("Error while marshalling the result: %v \n%v\n", result, err)
+		http.Error(response, internalError, http.StatusInternalServerError)
+		c.logger.Printf(errorMarshalling, result, err)
+		exaustRequestBody(request.Body, c.logger)
 		return
 	}
+
+	exaustRequestBody(request.Body, c.logger)
 
 }
 
@@ -69,32 +108,39 @@ func (c *EndpointHandler) GetPersonByNameEndpoint(response http.ResponseWriter, 
 
 	// defer stop()
 
-	response.Header().Set("content-type", "application/json")
+	response.Header().Set(setContentType, jsonType)
 
-	name := mux.Vars(request)[os.Getenv("NAME_ENDPOINT")]
+	const NAME_ENDPOINT = "NAME_ENDPOINT"
+	name := mux.Vars(request)[os.Getenv(NAME_ENDPOINT)]
 
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 
 	defer cancel()
 
-	pattern := fmt.Sprintf(`(?:\A|\s)(%v)(?:\s|\z)`, name)
+	const regexPattern = `(?:\A|\s)(%v)(?:\s|\z)`
+	pattern := fmt.Sprintf(regexPattern, name)
 
-	regexValue := primitive.Regex{Pattern: pattern, Options: "i"}
+	const regexOptions = "i"
+	regexValue := primitive.Regex{Pattern: pattern, Options: regexOptions}
 
-	cursor, err := c.collection.Find(ctx, bson.D{primitive.E{Key: "firstname", Value: bson.D{primitive.E{Key: "$regex", Value: regexValue}}}})
+	const (
+		bsonKey  = "firstname"
+		regexKey = "$regex"
+	)
+	cursor, err := c.collection.Find(ctx, bson.D{primitive.E{Key: bsonKey, Value: bson.D{primitive.E{Key: regexKey, Value: regexValue}}}})
 
 	defer func() {
 		if err := cursor.Close(ctx); err != nil {
-			c.logger.Printf("Error closing cursor: %v\n", err)
+			c.logger.Printf(errorClosingCursor, err)
 		}
 	}()
 
 	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error while querying the collection: %v \n%v\n", name, err)
+		c.logger.Printf(errorQuerying, name, err)
 		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
 		}
 
 		return
@@ -105,10 +151,10 @@ func (c *EndpointHandler) GetPersonByNameEndpoint(response http.ResponseWriter, 
 	people, err = appendPersonFromCursor(cursor, people, ctx, response, c.logger)
 	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error retrieving results from cursor: %v\n", err)
+		c.logger.Printf(errorretrievingFromCursor, err)
 		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
 		}
 		return
 	}
@@ -116,10 +162,10 @@ func (c *EndpointHandler) GetPersonByNameEndpoint(response http.ResponseWriter, 
 	err = people.ToJSON(response)
 
 	if err == data.ErrNotFound {
-		c.logger.Printf("No Person was found with the name: %v", name)
+		c.logger.Printf(noPersonFound, name)
 		_, err := response.Write([]byte(`{ "message": "No Person was found with the name: '` + name + `'" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
 		}
 		return
 	}
@@ -127,10 +173,10 @@ func (c *EndpointHandler) GetPersonByNameEndpoint(response http.ResponseWriter, 
 	if err != nil {
 
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error while marshalling the result: %v \n%v\n", people, err)
+		c.logger.Printf(errorMarshalling, people, err)
 		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
 		}
 		return
 
@@ -144,17 +190,18 @@ func (c *EndpointHandler) GetPersonByIdEndpoint(response http.ResponseWriter, re
 
 	// defer stop()
 
-	response.Header().Set("content-type", "application/json")
-	paramsId := mux.Vars(request)["id"]
+	response.Header().Set(setContentType, jsonType)
+	const ID = "id"
+	paramsId := mux.Vars(request)[ID]
 
 	id, errId := primitive.ObjectIDFromHex(paramsId)
 
 	if errId != nil {
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error while parsing the id: %v \n%v\n", paramsId, errId)
+		c.logger.Printf(errorParsingID, paramsId, errId)
 		_, err := response.Write([]byte(`{ "message": "` + errId.Error() + `" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
 		}
 		return
 	}
@@ -165,25 +212,26 @@ func (c *EndpointHandler) GetPersonByIdEndpoint(response http.ResponseWriter, re
 
 	defer cancel()
 
+	const bsonKey = "_id"
 	err := c.collection.FindOne(ctx, bson.D{{
-		Key: "_id", Value: id,
+		Key: bsonKey, Value: id,
 	}}).Decode(&person)
 
 	if err == mongo.ErrNoDocuments {
-		c.logger.Printf("No Person was found with the id: %v", paramsId)
+		c.logger.Printf(noIDFound, paramsId)
 		_, err := response.Write([]byte(`{ "message": "No Person was found with the id: ` + paramsId + `" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
 		}
 		return
 	}
 
 	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error while finding a document: %v \n%v\n", paramsId, err)
+		c.logger.Printf(errorFindingDocument, paramsId, err)
 		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
 		}
 		return
 	}
@@ -193,10 +241,10 @@ func (c *EndpointHandler) GetPersonByIdEndpoint(response http.ResponseWriter, re
 	if err != nil {
 
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error while marshalling the result: %v \n%v\n", person, err)
+		c.logger.Printf(errorMarshalling, person, err)
 		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
 		}
 		return
 
@@ -209,18 +257,20 @@ func (c *EndpointHandler) DeletePersonByIdEndpoint(response http.ResponseWriter,
 
 	// defer stop()
 
-	response.Header().Set("content-type", "application/json")
-	paramsId := mux.Vars(request)["id"]
+	response.Header().Set(setContentType, jsonType)
+	const ID = "id"
+	paramsId := mux.Vars(request)[ID]
 
 	id, err := primitive.ObjectIDFromHex(paramsId)
 
 	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error while parsing the id: %v \n%v\n", paramsId, err)
+		c.logger.Printf(errorParsingID, paramsId, err)
 		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
 		}
+		exaustRequestBody(request.Body, c.logger)
 		return
 	}
 
@@ -230,31 +280,35 @@ func (c *EndpointHandler) DeletePersonByIdEndpoint(response http.ResponseWriter,
 
 	defer cancel()
 
-	deleteResult, err := c.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
+	const bsonKey = "_id"
+	deleteResult, err := c.collection.DeleteOne(ctx, bson.D{{Key: bsonKey, Value: id}})
 
 	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error while deleting a document: %v \n%v\n", paramsId, err)
+		c.logger.Printf(errorDeletingDocument, paramsId, err)
 		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
 		}
+		exaustRequestBody(request.Body, c.logger)
 		return
 	}
 
 	if deleteResult.DeletedCount == 0 {
-		c.logger.Printf("No Person was found with the id: %v", paramsId)
+		c.logger.Printf(noIDFound, paramsId)
 		_, err := response.Write([]byte(`{ "message": "No Person was found with the id: ` + paramsId + `" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
 		}
+		exaustRequestBody(request.Body, c.logger)
 		return
 	}
 
 	_, err = response.Write([]byte(`{ "message": "Person with id: ` + paramsId + ` was deleted" }`))
 	if err != nil {
-		c.logger.Printf("Error while writing the client response: %v\n", err)
+		c.logger.Printf(errorWrittingClientResponse, err)
 	}
+	exaustRequestBody(request.Body, c.logger)
 
 }
 
@@ -264,17 +318,21 @@ func (c *EndpointHandler) UpdatePersonByIdEndpoint(response http.ResponseWriter,
 
 	// defer stop()
 
-	response.Header().Set("content-type", "application/json")
+	response.Header().Set(setContentType, jsonType)
 	paramsId := mux.Vars(request)["id"]
 
 	id, err := primitive.ObjectIDFromHex(paramsId)
 
 	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error while parsing the id: %v \n%v\n", paramsId, err)
+		c.logger.Printf(errorParsingID, paramsId, err)
 		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
+		}
+		_, copyErr := io.Copy(io.Discard, request.Body)
+		if copyErr != nil {
+			c.logger.Printf(errorExausting, copyErr)
 		}
 		return
 	}
@@ -288,10 +346,14 @@ func (c *EndpointHandler) UpdatePersonByIdEndpoint(response http.ResponseWriter,
 
 	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error marshalling a Person: %v", err)
+		c.logger.Printf(errorMarshallingPerson, err)
 		_, err := response.Write([]byte(`{ "message": "Error processing the request" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
+		}
+		_, copyErr := io.Copy(io.Discard, request.Body)
+		if copyErr != nil {
+			c.logger.Printf(errorExausting, copyErr)
 		}
 		return
 	}
@@ -300,32 +362,35 @@ func (c *EndpointHandler) UpdatePersonByIdEndpoint(response http.ResponseWriter,
 
 	defer cancel()
 
-	reSquareBrackets := regexp.MustCompile(`[{}"]`)
+	const regexPattern = `[{}"]`
+	reSquareBrackets := regexp.MustCompile(regexPattern)
 	personRegex := reSquareBrackets.ReplaceAllString(string(personJson), "")
 	reComma := regexp.MustCompile(`,`)
-	personRegex = reComma.ReplaceAllString(personRegex, ":")
-	keyValueSliceToUpdate := strings.Split(personRegex, ":")
+	const colon = ":"
+	personRegex = reComma.ReplaceAllString(personRegex, colon)
+	keyValueSliceToUpdate := strings.Split(personRegex, colon)
 	// c.logger.Println(keyValueSliceToUpdate[0], keyValueSliceToUpdate[1])
 
 	lenKeystoUpdate := len(keyValueSliceToUpdate)
 
 	collection := c.collection
 	var updateResultsSum int64
+	const bsonCommand = "$set"
 	for i := 0; i < lenKeystoUpdate; i = i + 2 {
 		updateResult, err := collection.UpdateByID(
 			ctx,
 			id,
 			bson.D{
-				{Key: "$set", Value: bson.D{{Key: keyValueSliceToUpdate[i], Value: keyValueSliceToUpdate[i+1]}}},
+				{Key: bsonCommand, Value: bson.D{{Key: keyValueSliceToUpdate[i], Value: keyValueSliceToUpdate[i+1]}}},
 			},
 		)
 
 		if err != nil {
 			response.WriteHeader(http.StatusInternalServerError)
-			c.logger.Printf("Error updating a Person: %v\n%v\n", paramsId, err)
+			c.logger.Printf(errorUpdatingPerson, paramsId, err)
 			_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 			if err != nil {
-				c.logger.Printf("Error while writing the error response: %v\n", err)
+				c.logger.Printf(errorWrittingResponse, err)
 			}
 			return
 		}
@@ -334,10 +399,14 @@ func (c *EndpointHandler) UpdatePersonByIdEndpoint(response http.ResponseWriter,
 	}
 
 	if updateResultsSum == 0 {
-		c.logger.Printf("No update operation was done to document with id: %v", paramsId)
+		c.logger.Printf(noUpdateOperation, paramsId)
 		_, err := response.Write([]byte(`{ "message": "No update operation was done to document with id: ` + paramsId + `" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the no update operation response: %v\n", err)
+			c.logger.Printf(errorWrittingUpdate, err)
+		}
+		_, copyErr := io.Copy(io.Discard, request.Body)
+		if copyErr != nil {
+			c.logger.Printf(errorExausting, copyErr)
 		}
 		return
 	}
@@ -345,6 +414,10 @@ func (c *EndpointHandler) UpdatePersonByIdEndpoint(response http.ResponseWriter,
 	_, err = response.Write([]byte(`{ "message": "Person with id: ` + paramsId + ` was updated" }`))
 	if err != nil {
 		c.logger.Printf("Error while writing the update response: %v\n", err)
+	}
+	_, copyErr := io.Copy(io.Discard, request.Body)
+	if copyErr != nil {
+		c.logger.Printf(errorExausting, copyErr)
 	}
 
 }
@@ -355,7 +428,7 @@ func (c *EndpointHandler) GetPeopleEndpoint(response http.ResponseWriter, reques
 
 	// defer stop()
 
-	response.Header().Set("content-type", "application/json")
+	response.Header().Set(setContentType, jsonType)
 
 	var people data.People
 
@@ -367,16 +440,16 @@ func (c *EndpointHandler) GetPeopleEndpoint(response http.ResponseWriter, reques
 
 	defer func() {
 		if err := cursor.Close(ctx); err != nil {
-			c.logger.Printf("Error closing cursor: %v\n", err)
+			c.logger.Printf(errorClosingCursor, err)
 		}
 	}()
 
 	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error while finding all documents: %v", err)
+		c.logger.Printf(errorFindingAllDocuments, err)
 		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
 		}
 
 		return
@@ -388,7 +461,7 @@ func (c *EndpointHandler) GetPeopleEndpoint(response http.ResponseWriter, reques
 		c.logger.Printf("Error while appending people from cursor: %v", err)
 		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
 		}
 		return
 	}
@@ -398,10 +471,10 @@ func (c *EndpointHandler) GetPeopleEndpoint(response http.ResponseWriter, reques
 	if err != nil {
 
 		response.WriteHeader(http.StatusInternalServerError)
-		c.logger.Printf("Error while marshalling the result: %v \n%v\n", people, err)
+		c.logger.Printf(errorMarshalling, people, err)
 		_, err := response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		if err != nil {
-			c.logger.Printf("Error while writing the error response: %v\n", err)
+			c.logger.Printf(errorWrittingResponse, err)
 		}
 		return
 
@@ -464,13 +537,13 @@ func (c *EndpointHandler) MiddlewareValidateProduct(next http.Handler) http.Hand
 
 		if err != nil {
 			response.WriteHeader(http.StatusInternalServerError)
-			c.logger.Printf("Error while marshalling the request body: %v\n", err)
+			c.logger.Printf(errorMarshallingBody, err)
 			return
 		}
 
 		if err := person.Validate(); err != nil {
-			c.logger.Printf("Error validating person: %v", err)
-			http.Error(response, fmt.Sprintf("Error validating person: %v", err), http.StatusBadRequest)
+			c.logger.Printf(errorValidatingPerson, err)
+			http.Error(response, fmt.Sprintf(errorValidatingPerson, err), http.StatusBadRequest)
 			return
 		}
 
@@ -491,13 +564,13 @@ func (c *EndpointHandler) MiddlewareValidateUpdateRequest(next http.Handler) htt
 
 		if err != nil {
 			response.WriteHeader(http.StatusInternalServerError)
-			c.logger.Printf("Error while marshalling the request body: %v\n", err)
+			c.logger.Printf(errorMarshallingBody, err)
 			return
 		}
 
 		if err := person.Validate(); err != nil {
-			c.logger.Printf("Error validating person: %v", err)
-			http.Error(response, fmt.Sprintf("Error validating person: %v", err), http.StatusBadRequest)
+			c.logger.Printf(errorValidatingPerson, err)
+			http.Error(response, fmt.Sprintf(errorValidatingPerson, err), http.StatusBadRequest)
 			return
 		}
 
