@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -102,10 +103,12 @@ func main() {
 	updateRouter.HandleFunc("/person/{id}", EndpointHandlerPost.UpdatePersonByIdEndpoint)
 	updateRouter.Use(EndpointHandlerPost.MiddlewareValidateUpdateRequest)
 
-	bindAddress := os.Getenv("BIND_ADDRESS")
+	const BIND_ADDRESS = "BIND_ADDRESS"
+	bindAddress := os.Getenv(BIND_ADDRESS)
 
 	if bindAddress == "" {
-		bindAddress = "127.0.0.1:8080"
+		const Localhost = "127.0.0.1:8080"
+		bindAddress = Localhost
 	}
 
 	s := http.Server{
@@ -122,7 +125,9 @@ func main() {
 
 	clients.CtrlCHandler(ctx, client, logger, &s)
 
-	logger.Println("Starting the application...")
+	const SERVER_STARTING = "Starting server on port %s"
+	port := strings.Split(bindAddress, ":")[1]
+	logger.Printf(SERVER_STARTING, port)
 
 	err = s.ListenAndServe()
 	if err == http.ErrServerClosed {
